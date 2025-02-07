@@ -1,90 +1,60 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
+import { signIn } from "next-auth/react";
 import {
   Form,
-  FormControl,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { useToast } from "@/hooks/use-toast";
-import { signUpSchema } from "@/schemas/signupSchema";
-import { ApiResponse } from "@/types/ApiResponse";
-import axios, { AxiosError } from "axios";
-import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import { useDebounceValue } from "usehooks-ts";
-import * as z from "zod";
+import { signinSchema } from "@/schemas/signinSchema";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SignInForm() {
-  const [username, setUsername] = useState("");
-  const [usernameMessage, setUsernameMessage] = useState("");
-  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const debounceUsername = useDebounceValue(username, 300);
-  const { toast } = useToast();
   const router = useRouter();
 
-  // zod implementation
-  const form = useForm<z.infer<typeof signUpSchema>>({
-    resolver: zodResolver(signUpSchema),
+  const form = useForm<z.infer<typeof signinSchema>>({
+    resolver: zodResolver(signinSchema),
     defaultValues: {
-      username: "",
-      email: "",
+      identifier: "",
       password: "",
     },
   });
-  useEffect(() => {
-    const checkUsernameUnique = async () => {
-      if (debounceUsername) {
-        setIsCheckingUsername(true);
-        setUsernameMessage("");
-        try {
-          const response = await axios.get(
-            `/api/check-username-unique?username=${debounceUsername}`
-          );
-          setUsernameMessage(response.data.message);
-        } catch (error) {
-          const axiosError = error as AxiosError<ApiResponse>;
-          setUsernameMessage(
-            axiosError.response?.data?.message ?? "Error checking username"
-          );
-          console.log(error);
-        } finally {
-          setIsCheckingUsername(false);
-        }
-      }
-    };
-  }, [debounceUsername]);
 
-  const onSubmit = async (data: z.infer<typeof signUpSchema>) => {
-    setIsSubmitting(true);
-    try {
-      const response = await axios.post<ApiResponse>("/api/sign-up", data);
-      toast({
-        title: "Success",
-        description: response.data.message,
-      });
-      router.replace(`verify/${username}`);
-    } catch (error) {
-      console.error("Error in signup of user");
-      const axiosError = error as AxiosError<ApiResponse>;
-      const errorMessage = axiosError.response?.data.message;
-      toast({
-        title: "Signup failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
+  const { toast } = useToast();
+  const onSubmit = async (data: z.infer<typeof signinSchema>) => {
+    const result = await signIn("credentials", {
+      redirect: false,
+      identifier: data.identifier,
+      password: data.password,
+    });
+
+    if (result?.error) {
+      if (result.error === "CredentialsSignin") {
+        toast({
+          title: "Login Failed",
+          description: "Incorrect username or password",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: result.error,
+          variant: "destructive",
+        });
+      }
+    }
+
+    if (result?.url) {
+      router.replace("/dashboard");
     }
   };
 
@@ -100,34 +70,12 @@ export default function SignInForm() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <FormField
-              name="username"
+              name="identifier"
               control={form.control}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Username</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="username"
-                      {...field}
-                      onChange={(e) => {
-                        field.onChange(e);
-                        setUsername(e.target.value);
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              name="email"
-              control={form.control}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input placeholder="email" {...field} />
-                  </FormControl>
+                  <FormLabel>Email/Username</FormLabel>
+                  <Input {...field} />
                   <FormMessage />
                 </FormItem>
               )}
@@ -138,21 +86,13 @@ export default function SignInForm() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Password</FormLabel>
-                  <FormControl>
-                    <Input placeholder="password" {...field} />
-                  </FormControl>
+                  <Input type="password" {...field} />
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" /> Please wait
-                </>
-              ) : (
-                "Signup"
-              )}
+            <Button className="w-full" type="submit">
+              Sign In
             </Button>
           </form>
         </Form>
@@ -167,4 +107,4 @@ export default function SignInForm() {
       </div>
     </div>
   );
-};
+}
